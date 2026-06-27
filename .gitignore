@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtualenv
+.venv/
+
+# Local env / secrets (the committed template lives in CLAUDE.md)
+.env
+
+# Benchmark outputs and Aegis decision logs
+runs/
