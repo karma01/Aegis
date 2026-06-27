@@ -12,3 +12,11 @@ __pycache__/
 
 # Benchmark outputs and Aegis decision logs
 runs/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Local Claude Code settings (keep launch.json shareable)
+.claude/settings.local.json
