@@ -123,6 +123,13 @@ Success is measured, not asserted. Always evaluate against an **undefended basel
 
 AgentDojo provides 4 suites — `workspace`, `banking`, `travel`, `slack` — with synthetic tasks and synthetic injection cases. All data is synthetic; this project builds and measures **defenses only** and introduces no new exploits.
 
+`aegis/metrics.py` aggregates the per-task result JSONs under `runs/` into the ablation table (benign utility, utility-under-attack, ASR, latency + overhead, and utility-drop as the over-block proxy), keyed by config. It reads only `runs/*.json` (reproducible) and is the data contract the dashboard consumes:
+
+```powershell
+python -m aegis.metrics --logdir ./runs            # printed table
+python -m aegis.metrics --logdir ./runs --json     # JSON for the UI
+```
+
 ## Module ownership (coordinate before changing shared seams)
 
 - **Pawan** — Detection: moderator, coarse taint tracking, trust-label model.

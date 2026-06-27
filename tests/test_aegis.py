@@ -9,6 +9,7 @@ from __future__ import annotations
 from agentdojo.functions_runtime import FunctionCall
 
 from aegis.contracts import Decision, TaintState, get_decisions, get_taint
+from aegis.metrics import aggregate, config_label, with_comparison
 from aegis.moderator import AegisModerator
 from aegis.policy_gate import AegisPolicyGate, decide, is_high_risk
 from aegis.sandbox import AegisToolsExecutor
@@ -180,8 +181,40 @@ def test_executor_runs_allowed_call():
     print("ok  executor runs an allowed call")
 
 
+def _result(pipeline, attack, utility, security, duration):
+    return {
+        "pipeline_name": pipeline, "suite_name": "workspace", "attack_type": attack,
+        "utility": utility, "security": security, "duration": duration,
+    }
+
+
+def test_metrics_aggregation():
+    assert config_label("vllm_parsed-aegis_combined") == "combined"
+    results = [
+        # baseline: benign util 100%, ASR 100% (both attacks succeed -> security False), 1s
+        _result("m-aegis_baseline", None, True, True, 1.0),
+        _result("m-aegis_baseline", None, True, True, 1.0),
+        _result("m-aegis_baseline", "imp", False, False, 1.0),
+        _result("m-aegis_baseline", "imp", False, False, 1.0),
+        # combined: benign util 50%, ASR 0% (attacks blocked -> security True), 2s
+        _result("m-aegis_combined", None, True, False, 2.0),
+        _result("m-aegis_combined", None, False, False, 2.0),
+        _result("m-aegis_combined", "imp", True, True, 2.0),
+        _result("m-aegis_combined", "imp", True, True, 2.0),
+    ]
+    metrics, baseline = with_comparison(aggregate(results))
+    assert baseline == "baseline"
+    b, c = metrics["baseline"], metrics["combined"]
+    assert b.benign_utility == 1.0 and b.asr == 1.0
+    assert c.benign_utility == 0.5 and c.asr == 0.0, "combined cuts ASR to 0"
+    assert abs(c.latency_overhead_pct - 100.0) < 1e-6, "2s vs 1s = +100%"
+    assert abs(c.utility_drop_pct - 50.0) < 1e-6, "over-block proxy: 100%->50% = 50pp"
+    print("ok  metrics aggregation (ASR / utility / latency overhead / over-block)")
+
+
 if __name__ == "__main__":
     test_decide_contract()
+    test_metrics_aggregation()
     test_trust_label_model()
     test_moderator_judge_escalates_and_is_cost_gated()
     test_taint_marks_on_tool_output()

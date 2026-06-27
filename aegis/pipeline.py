@@ -82,6 +82,7 @@ def build_aegis_pipeline(
     )
 
     if not aegis_config.any_active:
+        base.name = f"{base.name}-{name_suffix}"  # distinct logdir/label for the baseline ablation
         return base  # undefended baseline
 
     # from_config (defense=None) yields [SystemMessage, InitQuery, llm, ToolsExecutionLoop]
