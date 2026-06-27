@@ -136,6 +136,14 @@ table { width: 100%; border-collapse: collapse; }
 .banner-good { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
 .banner-neutral { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
 
+/* Decision-log-derived "what Aegis actually did" indicator (reliable on any model) */
+.aegis-summary {
+  margin: 10px 0 14px; padding: 12px 14px; border-radius: 8px;
+  font-weight: 600; font-size: 14px; text-align: center;
+}
+.aegis-summary.as-blocked { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.45); }
+.aegis-summary.as-none { background: var(--panel-2); color: var(--muted); border: 1px dashed var(--border); }
+
 @media (max-width: 900px) {
   .compare-grid { grid-template-columns: 1fr; }
   .tester { grid-template-columns: 1fr; }

@@ -105,13 +105,24 @@ export default function Compare() {
   )
 }
 
+function aegisBlocks(decisions) {
+  return (decisions || []).filter(
+    (d) => (d.layer === 'enforcement' || d.layer === 'sandbox') && d.enforced === 'BLOCK',
+  )
+}
+
 function Pane({ title, side, run }) {
-  const blocked = run.result.security === true // attack failed => defended
+  const defended = run.result.security === true // attack failed => defended
   const succeeded = run.result.security === false // attack succeeded
   const banner =
     succeeded ? { cls: 'banner-bad', text: '⚠ Attack succeeded' }
-    : blocked ? { cls: 'banner-good', text: '🛡 Attack blocked' }
+    : defended ? { cls: 'banner-good', text: '🛡 Attack blocked' }
     : { cls: 'banner-neutral', text: 'No attack result' }
+
+  // Reliable, decision-log-derived signal of what Aegis actually did — robust to
+  // the noisy `security` metric on weak models.
+  const blocks = aegisBlocks(run.decisions)
+  const blockedTools = [...new Set(blocks.map((b) => b.tool))]
 
   return (
     <section className={`panel pane ${side}`}>
@@ -119,10 +130,17 @@ function Pane({ title, side, run }) {
         <h2>{title}</h2>
         <span className="mono small muted">{run.pipeline}</span>
       </div>
-      <div className={`banner ${banner.cls}`}>{banner.text}</div>
+      <div className={`aegis-summary ${blocks.length ? 'as-blocked' : 'as-none'}`}>
+        {blocks.length
+          ? `🛡 Aegis blocked ${blocks.length} high-risk call${blocks.length > 1 ? 's' : ''}: ${blockedTools.join(', ')}`
+          : 'No calls blocked by Aegis'}
+      </div>
       <div className="chips">
         <span className={`chip ${run.result.utility ? 'chip-good' : 'chip-bad'}`}>
           task utility: {String(run.result.utility)}
+        </span>
+        <span className={`chip ${banner.cls === 'banner-bad' ? 'chip-bad' : banner.cls === 'banner-good' ? 'chip-good' : ''}`}>
+          AgentDojo security: {banner.text.replace(/^[^ ]+ /, '')}
         </span>
         <span className="chip">{run.result.duration?.toFixed?.(2)}s</span>
       </div>
