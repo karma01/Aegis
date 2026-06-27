@@ -13,9 +13,10 @@ is the single enforcement point.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
-from agentdojo.agent_pipeline import AgentPipeline, PipelineConfig, ToolsExecutionLoop
+from agentdojo.agent_pipeline import AgentPipeline, OpenAILLM, PipelineConfig, ToolsExecutionLoop
 from agentdojo.models import ModelsEnum
 
 from aegis.contracts import Decision
@@ -54,6 +55,19 @@ PRESETS: dict[str, AegisConfig] = {
 }
 
 
+def _make_hosted_llm(model: str, base_url: str | None, api_key: str | None) -> OpenAILLM:
+    """Build an OpenAI-compatible LLM element pointed at any hosted endpoint
+    (GitHub Models / Groq / OpenAI / ...). AgentDojo's built-in paths can't do
+    this — `VLLM_PARSED` is localhost-only and the `openai` provider is locked to
+    `ModelsEnum` names — but `PipelineConfig.llm` accepts a pre-built element."""
+    import openai
+
+    client = openai.OpenAI(base_url=base_url or None, api_key=api_key or os.getenv("OPENAI_API_KEY"))
+    llm = OpenAILLM(client, model)  # self.model (the real id) is what's sent to the API
+    llm.name = "hosted_" + model.replace("/", "_").replace(":", "_")  # filesystem-safe log path
+    return llm
+
+
 def build_aegis_pipeline(
     model: str,
     aegis_config: AegisConfig,
@@ -61,18 +75,25 @@ def build_aegis_pipeline(
     model_id: str | None = None,
     name_suffix: str = "aegis",
     tool_delimiter: str = "tool",
+    hosted_model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
 ) -> AgentPipeline:
     """Build an AgentDojo pipeline with the requested Aegis layers inserted.
 
     ``model`` is the UPPERCASE ``ModelsEnum`` *name* (e.g. ``"VLLM_PARSED"``) —
-    the same convention the CLI requires (see CLAUDE.md). When no layers are
-    active this returns the plain undefended pipeline unchanged.
+    the same convention the CLI requires (see CLAUDE.md). Pass ``hosted_model``
+    (+ optional ``base_url``/``api_key``) to instead run against any
+    OpenAI-compatible hosted endpoint. When no layers are active this returns the
+    plain undefended pipeline unchanged.
     """
-    llm_value = ModelsEnum[model].value  # name -> enum value string
+    llm_config = (
+        _make_hosted_llm(hosted_model, base_url, api_key) if hosted_model else ModelsEnum[model].value
+    )
 
     base = AgentPipeline.from_config(
         PipelineConfig(
-            llm=llm_value,
+            llm=llm_config,
             model_id=model_id,
             defense=None,
             tool_delimiter=tool_delimiter,

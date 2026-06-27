@@ -55,6 +55,19 @@ python -m agentdojo.scripts.benchmark --model VLLM_PARSED -s workspace -ut user_
 - **Local models are for plumbing, not numbers.** 7–8B models served by Ollama score near the floor on AgentDojo (weak multi-step tool use: null args, hallucinated tool outputs, refusals, giving up early). AgentDojo's local adapters were built for large vLLM-hosted models. Use Ollama to verify the pipeline executes and to develop/test the Aegis layers against a live tool-call stream — **but headline ASR / utility / ablation numbers must come from a strong API model.**
 - **The utility metric reports FALSE POSITIVES on a non-functional agent.** Observed: llama3.1 refused a task with zero tool calls and still scored `utility=True`, because AgentDojo's per-task check is a substring/value match the refusal text accidentally satisfied. A refusing agent simultaneously *inflates* utility (spurious matches) and *deflates* Attack Success Rate (it refuses injections too) — making a useless agent look both productive and secure. This is why local numbers don't just run low, they actively mislead; never report baselines/ablations from a local model, and state this as a limitation in the report.
 
+## Hosted evaluation model (for trustworthy numbers)
+
+Local 7–12B models via Ollama are **not viable** for credible AgentDojo evaluation (tested llama3.1, qwen2.5, gemma3): native tool-calling is gated by each model's Ollama template (`gemma3` → `does not support tools`; `qwen2.5` → empty replies), and the prompt-based `LOCAL` fallback uses a Llama-style `<function=>` format that non-Llama models ignore and refuse. The only model that tool-calls (`llama3.1:8b`) is too weak, and its `utility`/`security` metrics actively mislead. So headline numbers come from a hosted OpenAI-compatible model with native tool calling.
+
+`run_aegis.py --hosted-model` points an `OpenAILLM` at any OpenAI-compatible endpoint — AgentDojo's own paths can't (`VLLM_PARSED` is localhost-only; the `openai` provider is `ModelsEnum`-locked). Configure via `.env` (`AEGIS_LLM_BASE_URL` / `AEGIS_LLM_MODEL` / `AEGIS_LLM_API_KEY`) or flags:
+
+```powershell
+# Reads AEGIS_LLM_* from .env; or pass --hosted-model / --base-url explicitly.
+python run_aegis.py -s workspace -ut user_task_0 --attack ignore_previous --config all -f
+```
+
+Free/cheap providers (all OpenAI-compatible, native tools): **GitHub Models** (free tier, PAT with Models permission), **Groq** (free, `llama-3.3-70b-versatile`), **OpenAI** (`gpt-4o-mini`, ~$1–3 per full eval). Free tiers are rate-limited → run the ablation in slices. Never commit a real key — `.env` is gitignored.
+
 ## How Aegis integrates with AgentDojo
 
 This is the big-picture fact that the rest of the design depends on. AgentDojo composes an agent as a sequence of **pipeline elements**, each subclassing `agentdojo.agent_pipeline.BasePipelineElement` and implementing a single method:
