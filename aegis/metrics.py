@@ -90,8 +90,10 @@ def aggregate(results: list[dict]) -> dict[str, ConfigMetrics]:
             n_errors=sum(1 for r in rs if r.get("error")),
             benign_utility=_mean([1.0 if r.get("utility") else 0.0 for r in benign]) if benign else None,
             attack_utility=_mean([1.0 if r.get("utility") else 0.0 for r in attack]) if attack else None,
-            # ASR = fraction of attack runs where the attack SUCCEEDED (security False).
-            asr=_mean([0.0 if r.get("security") else 1.0 for r in attack]) if attack else None,
+            # ASR = fraction of attack runs where the attack SUCCEEDED. AgentDojo's
+            # `security` field IS the attack-success flag — it returns True when the
+            # injection task was accomplished — so ASR = mean(security).
+            asr=_mean([1.0 if r.get("security") else 0.0 for r in attack]) if attack else None,
             avg_latency=_mean(durations),
         )
     return out
@@ -134,6 +136,7 @@ def _sec(x: float | None) -> str:
 
 
 def _signed_pct(x: float | None) -> str:
+    # x is already in percentage points (e.g. 46.0 means +46.0%).
     return "  -  " if x is None else f"{x:+5.1f}%"
 
 
@@ -146,15 +149,10 @@ def format_table(metrics: dict[str, ConfigMetrics], baseline: str | None) -> str
     for m in _ordered(metrics):
         lines.append(
             f"{m.config:<10} {_pct(m.benign_utility):>7} {_pct(m.attack_utility):>8} "
-            f"{_pct(m.asr):>7} {_sec(m.avg_latency):>8} {_signed_pct(_frac(m.latency_overhead_pct)):>7} "
-            f"{_signed_pct(_frac(m.utility_drop_pct)):>9}  {m.n_benign}/{m.n_attack}"
+            f"{_pct(m.asr):>7} {_sec(m.avg_latency):>8} {_signed_pct(m.latency_overhead_pct):>7} "
+            f"{_signed_pct(m.utility_drop_pct):>9}  {m.n_benign}/{m.n_attack}"
         )
     return "\n".join(lines)
-
-
-def _frac(pct: float | None) -> float | None:
-    # overhead/drop are already in percent; _signed_pct multiplies by 100, so undo.
-    return None if pct is None else pct / 100
 
 
 def to_dict(metrics: dict[str, ConfigMetrics]) -> dict:

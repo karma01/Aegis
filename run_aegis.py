@@ -46,9 +46,10 @@ def _show(suite_name: str, results: SuiteResults, security: bool) -> None:
     print(f"[bold]{suite_name}[/bold]: utility {avg_utility * 100:.2f}%", end="")
     if security:
         sec = list(results["security_results"].values())
-        avg_sec = sum(sec) / len(sec) if sec else 0.0
-        # In AgentDojo, security=True means the attack did NOT succeed; ASR = 1 - security.
-        print(f" | ASR {(1 - avg_sec) * 100:.2f}% | security {avg_sec * 100:.2f}%", end="")
+        # AgentDojo's `security` value is the attack-success flag (injection task
+        # accomplished), so ASR = mean(security). Lower is better.
+        asr = sum(sec) / len(sec) if sec else 0.0
+        print(f" | ASR {asr * 100:.2f}%", end="")
     print()
 
 
