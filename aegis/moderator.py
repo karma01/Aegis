@@ -24,7 +24,7 @@ from agentdojo.types import ChatMessage
 from aegis.contracts import Decision, get_decisions, get_taint, record_decision
 from aegis.decision_log import DecisionLogger, get_logger
 from aegis.judge import LLMJudge
-from aegis.policy_gate import is_high_risk
+from aegis.policy_gate import is_egress
 
 # Deterministic rule: tool names that are never allowed regardless of taint.
 # TODO (Pawan): tune per suite; this is a conservative starter set.
@@ -96,11 +96,13 @@ class AegisModerator(BasePipelineElement):
     def _risk_score(self, tool_call: FunctionCall, taint, messages) -> float:
         """LLM-as-judge risk score in [0, 1] (advisory; combined with rules above).
 
-        Cost control: only spend a judge call where risk is plausible — a
-        high-impact action, or any action on a tainted context. Pure reads on a
-        clean context score 0.0 without a model call."""
+        Lethal-trifecta-aligned: only an **egress** action on a **tainted** context
+        is risky. On a clean context (no untrusted influence) or for a non-egress
+        action (local read/create/update), we don't consult the judge — this is
+        what keeps benign high-impact actions usable (no over-block) and also
+        avoids paying for a judge call that can't change the outcome."""
         if self.llm_judge is None:
             return 0.0
-        if not (is_high_risk(tool_call) or taint.tainted):
+        if not (taint.tainted and is_egress(tool_call)):
             return 0.0
         return float(self.llm_judge.score(tool_call, taint, messages))

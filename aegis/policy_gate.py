@@ -22,29 +22,26 @@ from agentdojo.types import ChatMessage
 from aegis.contracts import Decision, TaintState, get_decisions, get_taint, record_decision
 from aegis.decision_log import DecisionLogger, get_logger
 
-# Substrings marking a tool as high-risk (external send / share / mutation).
+# Egress = capabilities that can send data OUT of the agent's trust boundary.
+# The lethal trifecta is specifically about EXFILTRATION, so the gate keys on
+# egress — NOT on local mutations (create/update/delete), which are a different
+# threat class and over-block benign tasks when gated (measured: a legitimate
+# create_calendar_event after reading the user's own calendar was being blocked).
+# Note "email"/"message" are deliberately excluded so *reads* like
+# get_received_emails / read_channel_messages don't count as egress.
+# Destructive-action protection (e.g. injected delete) is separate future work.
 # TODO (Asmita): replace heuristic with an explicit per-suite capability map.
-HIGH_RISK_KEYWORDS = {
-    "send",
-    "email",
-    "post",
-    "share",
-    "publish",
-    "upload",
-    "message",
-    "invite",
-    "transfer",
-    "pay",
-    "delete",
-    "write",
-    "create",
-    "update",
-}
+EGRESS_KEYWORDS = {"send", "post", "share", "publish", "upload", "invite", "transfer", "pay"}
 
 
-def is_high_risk(tool_call: FunctionCall) -> bool:
+def is_egress(tool_call: FunctionCall) -> bool:
+    """True if the call can send data outside the agent's boundary (exfiltration)."""
     name = tool_call.function.lower()
-    return any(keyword in name for keyword in HIGH_RISK_KEYWORDS)
+    return any(keyword in name for keyword in EGRESS_KEYWORDS)
+
+
+# Backwards-compatible alias: the lethal-trifecta trigger is egress.
+is_high_risk = is_egress
 
 
 def decide(
@@ -54,11 +51,11 @@ def decide(
 ) -> Decision:
     """STABLE CONTRACT (taint tracker -> policy gate).
 
-    Returns the lethal-trifecta verdict for one tool call given the current taint
-    state. ALLOW unless the call is high-risk *and* the context is tainted, in
-    which case return ``on_violation`` (ESCALATE by default; BLOCK to deny
-    outright)."""
-    if is_high_risk(tool_call) and taint_state.tainted:
+    Lethal-trifecta verdict for one tool call: ALLOW unless the call is an
+    *egress* action *and* the context is tainted (untrusted data + exfiltration
+    path), in which case return ``on_violation`` (ESCALATE by default; BLOCK to
+    deny outright)."""
+    if is_egress(tool_call) and taint_state.tainted:
         return on_violation
     return Decision.ALLOW
 
@@ -94,7 +91,7 @@ class AegisPolicyGate(BasePipelineElement):
         for tool_call in last["tool_calls"]:
             decision = decide(tool_call, taint, on_violation=self.on_violation)
             if decision is not Decision.ALLOW:
-                reason = f"lethal trifecta: high-risk '{tool_call.function}' on tainted context {sorted(taint.sources)}"
+                reason = f"lethal trifecta: egress '{tool_call.function}' on tainted context {sorted(taint.sources)}"
                 record_decision(decisions, tool_call.id, decision, reason, layer="policy_gate")
                 self.logger.log(
                     layer="policy_gate",
