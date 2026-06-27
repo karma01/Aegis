@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import LiveTester from './components/LiveTester.jsx'
 import Dashboard from './components/Dashboard.jsx'
+import Compare from './components/Compare.jsx'
 
 const TABS = [
   { id: 'tester', label: 'Live Tester' },
+  { id: 'compare', label: 'Baseline vs Aegis' },
   { id: 'dashboard', label: 'Dashboard' },
 ]
 
@@ -32,7 +34,9 @@ export default function App() {
         </nav>
       </header>
       <main className="content">
-        {tab === 'tester' ? <LiveTester /> : <Dashboard />}
+        {tab === 'tester' && <LiveTester />}
+        {tab === 'compare' && <Compare />}
+        {tab === 'dashboard' && <Dashboard />}
       </main>
     </div>
   )
