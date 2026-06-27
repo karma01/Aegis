@@ -18,3 +18,10 @@ export const postRun = (body) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }).then(asJson)
+
+export const postCompare = (body) =>
+  fetch('/api/compare', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(asJson)

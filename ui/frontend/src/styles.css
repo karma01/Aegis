@@ -115,6 +115,40 @@ table { width: 100%; border-collapse: collapse; }
 }
 .decisions th, .metrics-table th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
 
+/* Compare view */
+.controls-row-fields { display: flex; flex-wrap: wrap; gap: 14px; }
+.controls-row-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); min-width: 150px; }
+.controls-row-fields select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px; font-size: 13px;
+}
+.compare-btn { width: auto; margin-top: 14px; padding: 11px 22px; }
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.pane.left { border-top: 3px solid var(--red); }
+.pane.right { border-top: 3px solid var(--green); }
+.pane-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pane-head h2 { margin: 0 0 2px; font-size: 15px; }
+.banner {
+  margin: 10px 0 14px; padding: 10px 14px; border-radius: 8px;
+  font-weight: 600; font-size: 14px; text-align: center;
+}
+.banner-bad { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.4); }
+.banner-good { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+.banner-neutral { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+
+/* Decision-log-derived "what Aegis actually did" indicator (reliable on any model) */
+.aegis-summary {
+  margin: 10px 0 14px; padding: 12px 14px; border-radius: 8px;
+  font-weight: 600; font-size: 14px; text-align: center;
+}
+.aegis-summary.as-blocked { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.45); }
+.aegis-summary.as-none { background: var(--panel-2); color: var(--muted); border: 1px dashed var(--border); }
+
+@media (max-width: 900px) {
+  .compare-grid { grid-template-columns: 1fr; }
+  .tester { grid-template-columns: 1fr; }
+}
+
 /* Dashboard bars */
 .cell-bar { display: flex; flex-direction: column; gap: 4px; min-width: 90px; }
 .bar-track { height: 5px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }

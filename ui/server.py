@@ -49,6 +49,18 @@ class RunRequest(BaseModel):
     escalate: str = "block"
 
 
+class CompareRequest(BaseModel):
+    suite: str
+    user_task: str
+    model: str = "VLLM_PARSED"
+    model_id: str | None = None
+    attack: str = "ignore_previous"  # the demo is about an attack
+    injection_task: str | None = None
+    escalate: str = "block"
+    left_config: str = "baseline"
+    right_config: str = "combined"
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -117,4 +129,33 @@ def run(req: RunRequest) -> dict:
             benchmark_version=BENCHMARK_VERSION,
         )
     except Exception as exc:  # surface a clean error to the UI (e.g. model server down)
+        raise HTTPException(500, f"{type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/api/compare")
+def compare(req: CompareRequest) -> dict:
+    """Run the SAME task+attack under two configs (default baseline vs combined)
+    and return both, for the side-by-side demo. Runs are sequential so each one's
+    decision-log snapshot is clean; both use the same injection task."""
+    try:
+        injection = req.injection_task
+        if injection is None:
+            s = get_suite(BENCHMARK_VERSION, req.suite)
+            injection = next(iter(s.injection_tasks.keys()))
+
+        def go(config: str) -> dict:
+            return run_single(
+                suite=req.suite, user_task=req.user_task, config=config,
+                model=req.model, model_id=req.model_id, attack=req.attack,
+                injection_task=injection, escalate=req.escalate,
+                benchmark_version=BENCHMARK_VERSION,
+            )
+
+        return {
+            "attack": req.attack,
+            "injection_task": injection,
+            "left": go(req.left_config),
+            "right": go(req.right_config),
+        }
+    except Exception as exc:
         raise HTTPException(500, f"{type(exc).__name__}: {exc}") from exc
