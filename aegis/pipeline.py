@@ -55,6 +55,29 @@ PRESETS: dict[str, AegisConfig] = {
 }
 
 
+# Map a hosted model id to a canonical AgentDojo model id, so name-addressing
+# attacks (e.g. important_instructions reads the model family from the pipeline
+# name) can identify the family, and the logdir path stays filesystem-safe.
+_ATTACK_NAME_HINTS = {
+    "gpt-4o-mini": "gpt-4o-mini-2024-07-18",
+    "gpt-4o": "gpt-4o-2024-05-13",
+    "gpt-4": "gpt-4-0125-preview",
+    "gpt-3.5": "gpt-3.5-turbo-0125",
+    "claude": "claude-3-5-sonnet-20241022",
+    "gemini": "gemini-2.0-flash-001",
+    "llama": "local",  # -> "Local model"
+    "mixtral": "local",
+}
+
+
+def _pipeline_name_for(model: str) -> str:
+    low = model.lower()
+    for token, canonical in _ATTACK_NAME_HINTS.items():
+        if token in low:
+            return canonical
+    return "hosted_" + model.replace("/", "_").replace(":", "_")
+
+
 def _make_hosted_llm(model: str, base_url: str | None, api_key: str | None) -> OpenAILLM:
     """Build an OpenAI-compatible LLM element pointed at any hosted endpoint
     (GitHub Models / Groq / OpenAI / ...). AgentDojo's built-in paths can't do
@@ -63,8 +86,8 @@ def _make_hosted_llm(model: str, base_url: str | None, api_key: str | None) -> O
     import openai
 
     client = openai.OpenAI(base_url=base_url or None, api_key=api_key or os.getenv("OPENAI_API_KEY"))
-    llm = OpenAILLM(client, model)  # self.model (the real id) is what's sent to the API
-    llm.name = "hosted_" + model.replace("/", "_").replace(":", "_")  # filesystem-safe log path
+    llm = OpenAILLM(client, model)  # self.model (the real id, e.g. "openai/gpt-4o-mini") is sent to the API
+    llm.name = _pipeline_name_for(model)  # recognizable by name-addressing attacks; filesystem-safe
     return llm
 
 
