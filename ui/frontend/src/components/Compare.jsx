@@ -112,8 +112,9 @@ function aegisBlocks(decisions) {
 }
 
 function Pane({ title, side, run }) {
-  const defended = run.result.security === true // attack failed => defended
-  const succeeded = run.result.security === false // attack succeeded
+  // AgentDojo `security` is the attack-success flag: True => injection accomplished.
+  const succeeded = run.result.security === true // attack succeeded
+  const defended = run.result.security === false // attack failed / blocked
   const banner =
     succeeded ? { cls: 'banner-bad', text: '⚠ Attack succeeded' }
     : defended ? { cls: 'banner-good', text: '🛡 Attack blocked' }

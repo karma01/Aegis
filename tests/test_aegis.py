@@ -60,7 +60,14 @@ def test_decide_contract():
     assert decide(read, dirty) is Decision.ALLOW, "tainted but not high-risk -> allow"
     assert decide(send, dirty, on_violation=Decision.BLOCK) is Decision.BLOCK
     assert is_high_risk(send) and not is_high_risk(read)
-    print("ok  decide() lethal-trifecta contract")
+    # Local mutations are NOT egress -> never trip the trifecta, even when tainted
+    # (this is the over-block fix: a benign create after reading own data passes).
+    create = FunctionCall(function="create_calendar_event", args={}, id="3")
+    delete = FunctionCall(function="delete_file", args={}, id="4")
+    assert decide(create, dirty) is Decision.ALLOW, "local create on tainted is not exfiltration"
+    assert decide(delete, dirty) is Decision.ALLOW, "local delete on tainted is not exfiltration"
+    assert not is_high_risk(create) and not is_high_risk(delete)
+    print("ok  decide() lethal-trifecta contract (egress-only)")
 
 
 def test_trust_label_model():
@@ -100,7 +107,23 @@ def test_moderator_judge_escalates_and_is_cost_gated():
     _, _, _, _, extra2 = mod2.query("q", _FakeRuntime(["get_webpage"]), None, [_assistant([read])], extra2)
     assert get_decisions(extra2)["6"].decision is Decision.ALLOW
     assert judge2.calls == 0, "judge skipped for low-risk call on clean context"
-    print("ok  moderator LLM-judge escalation + cost gating")
+
+    # Egress on CLEAN context: judge skipped -> ALLOW (no over-block of legit sends).
+    extra3 = {}
+    send_clean = FunctionCall(function="send_email", args={}, id="7")
+    judge3 = _FakeJudge(0.9)
+    AegisModerator(llm_judge=judge3).query("q", _FakeRuntime(["send_email"]), None, [_assistant([send_clean])], extra3)
+    assert get_decisions(extra3)["7"].decision is Decision.ALLOW and judge3.calls == 0
+
+    # Local mutation on TAINTED context: not egress -> judge skipped -> ALLOW
+    # (the create_calendar_event over-block fix).
+    extra4 = {}
+    get_taint(extra4).mark("calendar")
+    create = FunctionCall(function="create_calendar_event", args={}, id="8")
+    judge4 = _FakeJudge(0.9)
+    AegisModerator(llm_judge=judge4).query("q", _FakeRuntime(["create_calendar_event"]), None, [_assistant([create])], extra4)
+    assert get_decisions(extra4)["8"].decision is Decision.ALLOW and judge4.calls == 0
+    print("ok  moderator judge: escalates egress+tainted, skips clean / non-egress")
 
 
 def test_taint_marks_on_tool_output():
@@ -181,32 +204,36 @@ def test_executor_runs_allowed_call():
     print("ok  executor runs an allowed call")
 
 
-def _result(pipeline, attack, utility, security, duration):
+def _result(pipeline, attack, utility, security, duration, user_task="user_task_0"):
     return {
         "pipeline_name": pipeline, "suite_name": "workspace", "attack_type": attack,
-        "utility": utility, "security": security, "duration": duration,
+        "user_task_id": user_task, "utility": utility, "security": security, "duration": duration,
     }
 
 
 def test_metrics_aggregation():
     assert config_label("vllm_parsed-aegis_combined") == "combined"
+    # AgentDojo `security`=True means the attack SUCCEEDED. ASR = mean(security).
     results = [
-        # baseline: benign util 100%, ASR 100% (both attacks succeed -> security False), 1s
+        # baseline: benign util 100%; attacks SUCCEED (security True) -> ASR 100%; 1s
         _result("m-aegis_baseline", None, True, True, 1.0),
         _result("m-aegis_baseline", None, True, True, 1.0),
-        _result("m-aegis_baseline", "imp", False, False, 1.0),
-        _result("m-aegis_baseline", "imp", False, False, 1.0),
-        # combined: benign util 50%, ASR 0% (attacks blocked -> security True), 2s
-        _result("m-aegis_combined", None, True, False, 2.0),
-        _result("m-aegis_combined", None, False, False, 2.0),
-        _result("m-aegis_combined", "imp", True, True, 2.0),
-        _result("m-aegis_combined", "imp", True, True, 2.0),
+        _result("m-aegis_baseline", "imp", False, True, 1.0),
+        _result("m-aegis_baseline", "imp", False, True, 1.0),
+        # combined: benign util 50%; attacks BLOCKED (security False) -> ASR 0%; 2s
+        _result("m-aegis_combined", None, True, True, 2.0, user_task="user_task_0"),
+        _result("m-aegis_combined", None, False, True, 2.0, user_task="user_task_1"),
+        _result("m-aegis_combined", "imp", True, False, 2.0),
+        _result("m-aegis_combined", "imp", True, False, 2.0),
+        # an injection task run as a user task must NOT drag down benign utility
+        _result("m-aegis_combined", None, False, True, 99.0, user_task="injection_task_0"),
     ]
     metrics, baseline = with_comparison(aggregate(results))
     assert baseline == "baseline"
     b, c = metrics["baseline"], metrics["combined"]
-    assert b.benign_utility == 1.0 and b.asr == 1.0
+    assert b.benign_utility == 1.0 and b.asr == 1.0, "baseline: attacks succeed -> ASR 100%"
     assert c.benign_utility == 0.5 and c.asr == 0.0, "combined cuts ASR to 0"
+    assert c.n_benign == 2, "injection-task-as-user excluded from benign count"
     assert abs(c.latency_overhead_pct - 100.0) < 1e-6, "2s vs 1s = +100%"
     assert abs(c.utility_drop_pct - 50.0) < 1e-6, "over-block proxy: 100%->50% = 50pp"
     print("ok  metrics aggregation (ASR / utility / latency overhead / over-block)")

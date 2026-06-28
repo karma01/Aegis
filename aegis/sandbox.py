@@ -36,19 +36,11 @@ from agentdojo.types import ChatMessage, ChatToolResultMessage, get_text_content
 
 from aegis.contracts import Decision, get_decisions, verdict_for
 from aegis.decision_log import DecisionLogger, get_logger
+from aegis.policy_gate import is_egress  # shared egress (exfiltration) definition
 from aegis.trust import TrustLabeler, default_labeler
-
-# Egress = a capability that can send data OUT of the agent's boundary. Narrower
-# than the policy gate's "high-risk" set (which also covers local mutation).
-EGRESS_KEYWORDS = {"send", "post", "share", "invite", "transfer", "pay", "publish", "upload"}
 
 # extra_args key for the sandbox's own, layer-independent taint signal.
 SANDBOX_KEY = "aegis_sandbox"
-
-
-def is_egress(tool_name: str) -> bool:
-    name = tool_name.lower()
-    return any(keyword in name for keyword in EGRESS_KEYWORDS)
 
 
 class CapabilitySandbox:
@@ -67,7 +59,7 @@ class CapabilitySandbox:
     def check(self, tool_call: FunctionCall, extra_args: dict) -> tuple[bool, str]:
         """Permit/deny a call *before* execution."""
         st = self._state(extra_args)
-        if is_egress(tool_call.function) and st["tainted"]:
+        if is_egress(tool_call) and st["tainted"]:
             return False, f"egress capability '{tool_call.function}' denied on sandbox-tainted context {sorted(st['sources'])}"
         return True, "capability permitted"
 

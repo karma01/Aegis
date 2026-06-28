@@ -115,8 +115,8 @@ export default function LiveTester() {
                 {result.result.attack && (
                   <Chip
                     label="attack blocked"
-                    value={result.result.security}
-                    good={result.result.security}
+                    value={result.result.security === false}
+                    good={result.result.security === false}
                   />
                 )}
                 <span className="chip">{fmtSecs(result.result.duration)}</span>
