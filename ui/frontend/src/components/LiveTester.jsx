@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getOptions, getSuite, postRun } from '../api.js'
 import Timeline from './Timeline.jsx'
 import DecisionsTable from './DecisionsTable.jsx'
+import PipelineFlow from './PipelineFlow.jsx'
 
 export default function LiveTester() {
   const [options, setOptions] = useState(null)
@@ -122,14 +123,22 @@ export default function LiveTester() {
                 <span className="chip">{fmtSecs(result.result.duration)}</span>
               </div>
             </div>
+            <div style={{ margin: '16px 0 4px' }}>
+              <PipelineFlow decisions={result.decisions} />
+            </div>
             <h3>Decisions</h3>
             <DecisionsTable decisions={result.decisions} />
             <h3>Conversation</h3>
             <Timeline messages={result.messages} />
           </>
         ) : (
-          <p className="muted">Configure a run and press <b>Run</b> to see the agent's tool
-          calls flow through the four Aegis layers.</p>
+          <>
+            <PipelineFlow decisions={[]} />
+            <div className="placeholder" style={{ marginTop: 18 }}>
+              Configure a run and press <b>Run</b> to watch the agent's tool calls flow
+              through the four Aegis layers — with each layer's verdict in real time.
+            </div>
+          </>
         )}
       </section>
     </div>

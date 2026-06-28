@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getOptions, getSuite, postCompare } from '../api.js'
 import Timeline from './Timeline.jsx'
 import DecisionsTable from './DecisionsTable.jsx'
+import PipelineFlow from './PipelineFlow.jsx'
 
 export default function Compare() {
   const [options, setOptions] = useState(null)
@@ -144,6 +145,9 @@ function Pane({ title, side, run }) {
           AgentDojo security: {banner.text.replace(/^[^ ]+ /, '')}
         </span>
         <span className="chip">{run.result.duration?.toFixed?.(2)}s</span>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <PipelineFlow decisions={run.decisions} />
       </div>
       <h3>Decisions</h3>
       <DecisionsTable decisions={run.decisions} />
