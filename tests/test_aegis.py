@@ -204,10 +204,10 @@ def test_executor_runs_allowed_call():
     print("ok  executor runs an allowed call")
 
 
-def _result(pipeline, attack, utility, security, duration):
+def _result(pipeline, attack, utility, security, duration, user_task="user_task_0"):
     return {
         "pipeline_name": pipeline, "suite_name": "workspace", "attack_type": attack,
-        "utility": utility, "security": security, "duration": duration,
+        "user_task_id": user_task, "utility": utility, "security": security, "duration": duration,
     }
 
 
@@ -221,16 +221,19 @@ def test_metrics_aggregation():
         _result("m-aegis_baseline", "imp", False, True, 1.0),
         _result("m-aegis_baseline", "imp", False, True, 1.0),
         # combined: benign util 50%; attacks BLOCKED (security False) -> ASR 0%; 2s
-        _result("m-aegis_combined", None, True, True, 2.0),
-        _result("m-aegis_combined", None, False, True, 2.0),
+        _result("m-aegis_combined", None, True, True, 2.0, user_task="user_task_0"),
+        _result("m-aegis_combined", None, False, True, 2.0, user_task="user_task_1"),
         _result("m-aegis_combined", "imp", True, False, 2.0),
         _result("m-aegis_combined", "imp", True, False, 2.0),
+        # an injection task run as a user task must NOT drag down benign utility
+        _result("m-aegis_combined", None, False, True, 99.0, user_task="injection_task_0"),
     ]
     metrics, baseline = with_comparison(aggregate(results))
     assert baseline == "baseline"
     b, c = metrics["baseline"], metrics["combined"]
     assert b.benign_utility == 1.0 and b.asr == 1.0, "baseline: attacks succeed -> ASR 100%"
     assert c.benign_utility == 0.5 and c.asr == 0.0, "combined cuts ASR to 0"
+    assert c.n_benign == 2, "injection-task-as-user excluded from benign count"
     assert abs(c.latency_overhead_pct - 100.0) < 1e-6, "2s vs 1s = +100%"
     assert abs(c.utility_drop_pct - 50.0) < 1e-6, "over-block proxy: 100%->50% = 50pp"
     print("ok  metrics aggregation (ASR / utility / latency overhead / over-block)")

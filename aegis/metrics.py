@@ -80,14 +80,23 @@ def aggregate(results: list[dict]) -> dict[str, ConfigMetrics]:
 
     out: dict[str, ConfigMetrics] = {}
     for label, rs in groups.items():
-        benign = [r for r in rs if not r.get("attack_type")]
         attack = [r for r in rs if r.get("attack_type")]
-        durations = [r["duration"] for r in rs if isinstance(r.get("duration"), (int, float))]
+        # Benign utility is measured over real USER tasks only. AgentDojo also runs
+        # each injection task as a standalone "user task" (an accomplishability
+        # check) — those land with attack_type=None but a user_task_id like
+        # "injection_task_*"; Aegis blocking their egress is correct behaviour, not
+        # an over-block, so they're excluded from the benign/over-block headline.
+        benign = [
+            r for r in rs
+            if not r.get("attack_type") and str(r.get("user_task_id", "")).startswith("user_task")
+        ]
+        meaningful = benign + attack  # exclude the injection-as-user outliers from latency too
+        durations = [r["duration"] for r in meaningful if isinstance(r.get("duration"), (int, float))]
         out[label] = ConfigMetrics(
             config=label,
             n_benign=len(benign),
             n_attack=len(attack),
-            n_errors=sum(1 for r in rs if r.get("error")),
+            n_errors=sum(1 for r in meaningful if r.get("error")),
             benign_utility=_mean([1.0 if r.get("utility") else 0.0 for r in benign]) if benign else None,
             attack_utility=_mean([1.0 if r.get("utility") else 0.0 for r in attack]) if attack else None,
             # ASR = fraction of attack runs where the attack SUCCEEDED. AgentDojo's
