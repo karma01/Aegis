@@ -6,19 +6,15 @@ and calls AgentDojo's benchmark functions directly.
 
 Examples (PowerShell; env vars come from .env):
 
-    # One benign task, all layers
+    # One benign task, all layers (Ollama via VLLM_PARSED)
     python run_aegis.py -s workspace -ut user_task_0 --config combined
 
-    # Run the full ablation (baseline, moderator, sandbox, combined) under attack
+    # Full ablation under attack: baseline, moderator, sandbox, combined
     python run_aegis.py -s workspace --attack important_instructions --config all -f
-
-    # Just the undefended baseline on a strong API model
-    python run_aegis.py -s banking --model GPT_4O_MINI_2024_07_18 --config baseline
 """
 
 from __future__ import annotations
 
-import os
 import warnings
 from pathlib import Path
 
@@ -46,8 +42,7 @@ def _show(suite_name: str, results: SuiteResults, security: bool) -> None:
     print(f"[bold]{suite_name}[/bold]: utility {avg_utility * 100:.2f}%", end="")
     if security:
         sec = list(results["security_results"].values())
-        # AgentDojo's `security` value is the attack-success flag (injection task
-        # accomplished), so ASR = mean(security). Lower is better.
+        # AgentDojo's `security` value is the attack-success flag; ASR = mean(security).
         asr = sum(sec) / len(sec) if sec else 0.0
         print(f" | ASR {asr * 100:.2f}%", end="")
     print()
@@ -65,9 +60,6 @@ def _run_one(
     force_rerun: bool,
     benchmark_version: str,
     escalate_action: Decision,
-    hosted_model: str | None = None,
-    base_url: str | None = None,
-    api_key: str | None = None,
 ) -> None:
     cfg = PRESETS[config_name]
     cfg.escalate_action = escalate_action
@@ -75,41 +67,29 @@ def _run_one(
 
     for suite_name in suites:
         suite = get_suite(benchmark_version, suite_name)
-        pipeline = build_aegis_pipeline(
-            model, cfg, model_id=model_id, name_suffix=f"aegis_{config_name}",
-            hosted_model=hosted_model, base_url=base_url, api_key=api_key,
-        )
+        pipeline = build_aegis_pipeline(model, cfg, model_id=model_id, name_suffix=f"aegis_{config_name}")
         print(f"pipeline: {pipeline.name}")
         with OutputLogger(str(logdir)):
             if attack is None:
                 results = benchmark_suite_without_injections(
-                    pipeline,
-                    suite,
+                    pipeline, suite,
                     user_tasks=user_tasks or None,
-                    logdir=logdir,
-                    force_rerun=force_rerun,
-                    benchmark_version=benchmark_version,
+                    logdir=logdir, force_rerun=force_rerun, benchmark_version=benchmark_version,
                 )
             else:
                 attacker = load_attack(attack, suite, pipeline)
                 results = benchmark_suite_with_injections(
-                    pipeline,
-                    suite,
-                    attacker,
+                    pipeline, suite, attacker,
                     user_tasks=user_tasks or None,
                     injection_tasks=injection_tasks or None,
-                    logdir=logdir,
-                    force_rerun=force_rerun,
-                    benchmark_version=benchmark_version,
+                    logdir=logdir, force_rerun=force_rerun, benchmark_version=benchmark_version,
                 )
         _show(suite_name, results, security=attack is not None)
 
 
 @click.command()
-@click.option("--model", default="VLLM_PARSED", help="UPPERCASE ModelsEnum name (e.g. VLLM_PARSED, GPT_4O_MINI_2024_07_18). Ignored if --hosted-model is set.")
+@click.option("--model", default="VLLM_PARSED", help="UPPERCASE ModelsEnum name (e.g. VLLM_PARSED, LOCAL).")
 @click.option("--model-id", default=None, help="Model id for local models (used by LOCAL; ignored by VLLM_PARSED).")
-@click.option("--hosted-model", default=None, help="Run against any OpenAI-compatible hosted endpoint (e.g. 'openai/gpt-4o-mini' on GitHub Models, 'llama-3.3-70b-versatile' on Groq). Defaults to env AEGIS_LLM_MODEL.")
-@click.option("--base-url", default=None, help="Base URL for --hosted-model. Defaults to env AEGIS_LLM_BASE_URL.")
 @click.option("--suite", "-s", "suites", multiple=True, help="Suite(s): workspace, banking, travel, slack.")
 @click.option("--user-task", "-ut", "user_tasks", multiple=True)
 @click.option("--injection-task", "-it", "injection_tasks", multiple=True)
@@ -122,8 +102,6 @@ def _run_one(
 def main(
     model: str,
     model_id: str | None,
-    hosted_model: str | None,
-    base_url: str | None,
     suites: tuple[str, ...],
     user_tasks: tuple[str, ...],
     injection_tasks: tuple[str, ...],
@@ -137,23 +115,14 @@ def main(
     if not load_dotenv(".env"):
         warnings.warn("No .env file found")
 
-    # Hosted endpoint (GitHub Models / Groq / OpenAI / ...) takes precedence over
-    # the local ModelsEnum paths. Defaults pulled from .env (AEGIS_LLM_*).
-    hosted_model = hosted_model or os.getenv("AEGIS_LLM_MODEL")
-    base_url = base_url or os.getenv("AEGIS_LLM_BASE_URL")
-    api_key = os.getenv("AEGIS_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-
-    if hosted_model:
-        print(f"[bold]Hosted model:[/bold] {hosted_model}  (base_url={base_url or 'default'})")
-    else:
-        # Validate the model name early with a clear message (the uppercase-name gotcha).
-        try:
-            ModelsEnum[model]
-        except KeyError:
-            raise SystemExit(
-                f"Unknown model '{model}'. Pass the UPPERCASE enum NAME, e.g. VLLM_PARSED, LOCAL, "
-                f"GPT_4O_MINI_2024_07_18 — not the hyphenated value. (Or use --hosted-model.)"
-            )
+    # Model name must be the UPPERCASE enum NAME (see CLAUDE.md gotcha).
+    try:
+        ModelsEnum[model]
+    except KeyError:
+        raise SystemExit(
+            f"Unknown model '{model}'. Pass the UPPERCASE enum NAME, e.g. VLLM_PARSED, LOCAL — "
+            f"not the hyphenated value."
+        )
 
     if not suites:
         raise SystemExit("Provide at least one --suite/-s (workspace | banking | travel | slack).")
@@ -168,7 +137,6 @@ def main(
         _run_one(
             name, model, model_id, suites, user_tasks, injection_tasks,
             attack, logdir, force_rerun, benchmark_version, escalate_action,
-            hosted_model=hosted_model, base_url=base_url, api_key=api_key,
         )
 
 

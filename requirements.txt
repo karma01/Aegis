@@ -1,10 +1,5 @@
 # Aegis dependencies. Python 3.11. Install into .venv:
 #   pip install -r requirements.txt
-# Pinned to what the project was developed against; agentdojo pulls in click,
-# python-dotenv, pydantic, rich, etc. as transitive deps.
+# agentdojo pulls in click, python-dotenv, pydantic, rich, etc. as transitive deps.
 agentdojo==0.1.35
 openai==2.43.0
-
-# Demo UI backend (ui/server.py); the React frontend deps live in ui/frontend/package.json
-fastapi>=0.110
-uvicorn[standard]>=0.27

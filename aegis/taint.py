@@ -1,12 +1,16 @@
-"""Layer 2 — coarse-grained taint tracking.
+"""Layer 2 — Coarse-grained taint tracking + trust-label model  [STUB — Week 2, owner: Pawan]
 
-Runs AFTER the executor in the loop, so it sees the freshly-appended tool-result
-messages. It asks the trust-label model (:mod:`aegis.trust`) whether each tool
-output is untrusted and, on any untrusted output, marks the whole downstream
-context tainted. The taint state lives in ``extra_args`` and is read by the
-policy gate on later turns (taint accumulates across the conversation).
+Runs AFTER execution: labels each tool output trusted/untrusted (the trust-label
+model) and, on any untrusted output, marks the whole downstream context tainted.
+Taint state lives in ``extra_args`` (see aegis.contracts.get_taint) and
+accumulates across turns, so a later "send" sees taint from an earlier read.
 
-OWNER: Pawan (Detection).
+This is a no-op stub: it marks nothing. TODO (Pawan): implement
+  - a trust-label model (build aegis/trust.py): which tool outputs are untrusted
+    injection vectors (emails, web, files, reviews, ...) vs. safe,
+  - mark taint via aegis.contracts.get_taint(extra_args).mark(source),
+  - log via the decision logger.
+See the reference implementation on the `master` prototype branch.
 """
 
 from __future__ import annotations
@@ -15,22 +19,15 @@ from collections.abc import Sequence
 
 from agentdojo.agent_pipeline.base_pipeline_element import BasePipelineElement
 from agentdojo.functions_runtime import EmptyEnv, Env, FunctionsRuntime
-from agentdojo.types import ChatMessage, get_text_content_as_str
+from agentdojo.types import ChatMessage
 
-from aegis.contracts import get_taint
 from aegis.decision_log import DecisionLogger, get_logger
-from aegis.trust import TrustLabeler, default_labeler
 
 
 class AegisTaintTracker(BasePipelineElement):
     name = "aegis_taint_tracker"
 
-    def __init__(
-        self,
-        labeler: TrustLabeler | None = None,
-        logger: DecisionLogger | None = None,
-    ) -> None:
-        self.labeler = labeler or default_labeler
+    def __init__(self, logger: DecisionLogger | None = None) -> None:
         self.logger = logger or get_logger()
 
     def query(
@@ -41,26 +38,6 @@ class AegisTaintTracker(BasePipelineElement):
         messages: Sequence[ChatMessage] = [],
         extra_args: dict = {},
     ) -> tuple[str, FunctionsRuntime, Env, Sequence[ChatMessage], dict]:
-        taint = get_taint(extra_args)
-
-        # Inspect the trailing run of tool-result messages (the batch the
-        # executor just appended). Stop at the first non-tool message.
-        for message in reversed(messages):
-            if message.get("role") != "tool":
-                break
-            tool_call = message.get("tool_call")
-            tool_name = tool_call.function if tool_call is not None else "unknown"
-            content = get_text_content_as_str(message.get("content") or [])
-            untrusted, reason = self.labeler.label(tool_name, content)
-            self.logger.log(
-                layer="taint",
-                tool=tool_name,
-                untrusted=untrusted,
-                reason=reason,
-                tainted=taint.tainted or untrusted,
-                newly_tainted=untrusted and not taint.tainted,
-            )
-            if untrusted:
-                taint.mark(tool_name)
-
+        # TODO (Pawan): scan the trailing tool-result messages, classify each
+        # source with the trust-label model, and mark taint on untrusted output.
         return query, runtime, env, messages, extra_args

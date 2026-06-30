@@ -9,14 +9,18 @@ with the Aegis elements inserted in this order:
 Detection elements run *before* execution (so they can flag calls); taint runs
 *after* (so it labels fresh outputs and accumulates across turns). The executor
 is the single enforcement point.
+
+NOTE (Week 1 foundation): the four layers are stubs — this wires the seams and
+the baseline. Implement the layer bodies (per-owner TODOs in each module). The
+full reference implementation, plus hosted-model eval and the dashboard, lives on
+the `master` prototype branch.
 """
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
-from agentdojo.agent_pipeline import AgentPipeline, OpenAILLM, PipelineConfig, ToolsExecutionLoop
+from agentdojo.agent_pipeline import AgentPipeline, PipelineConfig, ToolsExecutionLoop
 from agentdojo.models import ModelsEnum
 
 from aegis.contracts import Decision
@@ -41,54 +45,13 @@ class AegisConfig:
         return self.moderator or self.taint or self.policy_gate or self.sandbox
 
 
-# The four ablation configurations from the project plan (CLAUDE.md "Evaluation").
+# The four ablation configurations from the project plan (see CLAUDE.md).
 PRESETS: dict[str, AegisConfig] = {
-    # No defense — the true undefended baseline (plain AgentDojo pipeline).
     "baseline": AegisConfig(moderator=False, taint=False, policy_gate=False, sandbox=False),
-    # Detection/decision stack, no isolation. Taint + gate feed the moderator's intent.
     "moderator": AegisConfig(moderator=True, taint=True, policy_gate=True, sandbox=False),
-    # Containment only — capability sandbox with its own taint signal; no
-    # moderator/gate/taint layers. Denies egress once it observes untrusted data.
     "sandbox": AegisConfig(moderator=False, taint=False, policy_gate=False, sandbox=True),
-    # Everything on.
     "combined": AegisConfig(moderator=True, taint=True, policy_gate=True, sandbox=True),
 }
-
-
-# Map a hosted model id to a canonical AgentDojo model id, so name-addressing
-# attacks (e.g. important_instructions reads the model family from the pipeline
-# name) can identify the family, and the logdir path stays filesystem-safe.
-_ATTACK_NAME_HINTS = {
-    "gpt-4o-mini": "gpt-4o-mini-2024-07-18",
-    "gpt-4o": "gpt-4o-2024-05-13",
-    "gpt-4": "gpt-4-0125-preview",
-    "gpt-3.5": "gpt-3.5-turbo-0125",
-    "claude": "claude-3-5-sonnet-20241022",
-    "gemini": "gemini-2.0-flash-001",
-    "llama": "local",  # -> "Local model"
-    "mixtral": "local",
-}
-
-
-def _pipeline_name_for(model: str) -> str:
-    low = model.lower()
-    for token, canonical in _ATTACK_NAME_HINTS.items():
-        if token in low:
-            return canonical
-    return "hosted_" + model.replace("/", "_").replace(":", "_")
-
-
-def _make_hosted_llm(model: str, base_url: str | None, api_key: str | None) -> OpenAILLM:
-    """Build an OpenAI-compatible LLM element pointed at any hosted endpoint
-    (GitHub Models / Groq / OpenAI / ...). AgentDojo's built-in paths can't do
-    this — `VLLM_PARSED` is localhost-only and the `openai` provider is locked to
-    `ModelsEnum` names — but `PipelineConfig.llm` accepts a pre-built element."""
-    import openai
-
-    client = openai.OpenAI(base_url=base_url or None, api_key=api_key or os.getenv("OPENAI_API_KEY"))
-    llm = OpenAILLM(client, model)  # self.model (the real id, e.g. "openai/gpt-4o-mini") is sent to the API
-    llm.name = _pipeline_name_for(model)  # recognizable by name-addressing attacks; filesystem-safe
-    return llm
 
 
 def build_aegis_pipeline(
@@ -98,25 +61,16 @@ def build_aegis_pipeline(
     model_id: str | None = None,
     name_suffix: str = "aegis",
     tool_delimiter: str = "tool",
-    hosted_model: str | None = None,
-    base_url: str | None = None,
-    api_key: str | None = None,
 ) -> AgentPipeline:
     """Build an AgentDojo pipeline with the requested Aegis layers inserted.
 
     ``model`` is the UPPERCASE ``ModelsEnum`` *name* (e.g. ``"VLLM_PARSED"``) —
-    the same convention the CLI requires (see CLAUDE.md). Pass ``hosted_model``
-    (+ optional ``base_url``/``api_key``) to instead run against any
-    OpenAI-compatible hosted endpoint. When no layers are active this returns the
-    plain undefended pipeline unchanged.
+    the same convention the CLI requires (see CLAUDE.md). When no layers are
+    active this returns the plain undefended baseline.
     """
-    llm_config = (
-        _make_hosted_llm(hosted_model, base_url, api_key) if hosted_model else ModelsEnum[model].value
-    )
-
     base = AgentPipeline.from_config(
         PipelineConfig(
-            llm=llm_config,
+            llm=ModelsEnum[model].value,
             model_id=model_id,
             defense=None,
             tool_delimiter=tool_delimiter,
@@ -127,7 +81,7 @@ def build_aegis_pipeline(
 
     if not aegis_config.any_active:
         base.name = f"{base.name}-{name_suffix}"  # distinct logdir/label for the baseline ablation
-        return base  # undefended baseline
+        return base
 
     # from_config (defense=None) yields [SystemMessage, InitQuery, llm, ToolsExecutionLoop]
     system_message, init_query, llm, _loop = list(base.elements)

@@ -6,9 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Aegis** is a taint-aware agentic moderator and sandbox framework that defends tool-using LLM agents against prompt injection. It is a defense-in-depth layer plugged into the **AgentDojo** benchmark — not a standalone agent. The full motivation, goals, success criteria, scope, and team responsibilities live in [Aegis_Project_Context.md](Aegis_Project_Context.md); read it before making architectural decisions.
 
-**Current state:** core implemented. The `aegis/` package implements all four layers as AgentDojo pipeline elements, with `run_aegis.py` as the entry point and offline logic tests in `tests/` (8 passing). Dependencies are in `requirements.txt` (`agentdojo==0.1.35`, `openai==2.43.0`).
+**Current state (this `develop` branch — Week 1 foundation):** the `aegis/` package has the **interface contracts + pipeline seams + baseline** wired, with `run_aegis.py` as the entry point and offline foundation tests in `tests/` (5 passing). The four layers are **stubs** with per-owner TODOs:
+- `moderator.py` (Layer 1, Pawan), `taint.py` (Layer 2, Pawan) — no-op pass-throughs.
+- `policy_gate.py` (Layer 3, Asmita) — `decide()` returns ALLOW.
+- `sandbox.py` (Layer 4, Asmita) — executes tools but does not yet enforce/isolate.
 
-Layer bodies are implemented (not stubs): moderator with deterministic rules + cost-gated LLM-judge (`aegis/judge.py`, safe fallback to risk 0.0); coarse taint via a 3-tier trust-label model (`aegis/trust.py` — curated vectors + read/action heuristic + content injection scan); lethal-trifecta policy gate; and a capability/egress sandbox (`aegis/sandbox.py`) that keeps its own taint signal so it contains exfiltration independently of the other layers. Remaining intentional non-stub: a third-party micro-VM is documented as production future-work (see sandbox.py). The demo UI (FastAPI + React) is designed but not yet built. No git repo yet.
+Stable and done: `contracts.py` (`Decision`, `TaintState`, `Verdict`, `decide` signature), `decision_log.py`, the `ToolsExecutionLoop` wiring + `PRESETS` ablation matrix in `pipeline.py`. Implement each layer's body against these seams.
+
+> A complete working prototype — all four layers implemented, an LLM judge, a 3-tier trust-label model, the egress sandbox, an evaluation/metrics aggregator (`aegis/metrics.py`), a hosted-model eval path (GitHub Models / Groq / OpenAI), and a FastAPI + React dashboard — lives on the **`master`** branch. Use it as a reference implementation; it validated that the design works end-to-end (baseline ASR 100% → defended 0%, benign utility preserved).
 
 ## Environment & commands
 
@@ -55,18 +60,7 @@ python -m agentdojo.scripts.benchmark --model VLLM_PARSED -s workspace -ut user_
 - **Local models are for plumbing, not numbers.** 7–8B models served by Ollama score near the floor on AgentDojo (weak multi-step tool use: null args, hallucinated tool outputs, refusals, giving up early). AgentDojo's local adapters were built for large vLLM-hosted models. Use Ollama to verify the pipeline executes and to develop/test the Aegis layers against a live tool-call stream — **but headline ASR / utility / ablation numbers must come from a strong API model.**
 - **The utility metric reports FALSE POSITIVES on a non-functional agent.** Observed: llama3.1 refused a task with zero tool calls and still scored `utility=True`, because AgentDojo's per-task check is a substring/value match the refusal text accidentally satisfied. A refusing agent simultaneously *inflates* utility (spurious matches) and *deflates* Attack Success Rate (it refuses injections too) — making a useless agent look both productive and secure. This is why local numbers don't just run low, they actively mislead; never report baselines/ablations from a local model, and state this as a limitation in the report.
 
-## Hosted evaluation model (for trustworthy numbers)
-
-Local 7–12B models via Ollama are **not viable** for credible AgentDojo evaluation (tested llama3.1, qwen2.5, gemma3): native tool-calling is gated by each model's Ollama template (`gemma3` → `does not support tools`; `qwen2.5` → empty replies), and the prompt-based `LOCAL` fallback uses a Llama-style `<function=>` format that non-Llama models ignore and refuse. The only model that tool-calls (`llama3.1:8b`) is too weak, and its `utility`/`security` metrics actively mislead. So headline numbers come from a hosted OpenAI-compatible model with native tool calling.
-
-`run_aegis.py --hosted-model` points an `OpenAILLM` at any OpenAI-compatible endpoint — AgentDojo's own paths can't (`VLLM_PARSED` is localhost-only; the `openai` provider is `ModelsEnum`-locked). Configure via `.env` (`AEGIS_LLM_BASE_URL` / `AEGIS_LLM_MODEL` / `AEGIS_LLM_API_KEY`) or flags:
-
-```powershell
-# Reads AEGIS_LLM_* from .env; or pass --hosted-model / --base-url explicitly.
-python run_aegis.py -s workspace -ut user_task_0 --attack ignore_previous --config all -f
-```
-
-Free/cheap providers (all OpenAI-compatible, native tools): **GitHub Models** (free tier, PAT with Models permission), **Groq** (free, `llama-3.3-70b-versatile`), **OpenAI** (`gpt-4o-mini`, ~$1–3 per full eval). Free tiers are rate-limited → run the ablation in slices. Never commit a real key — `.env` is gitignored.
+> **Real evaluation needs a hosted model.** Local 7–12B Ollama models can't credibly drive AgentDojo (tested llama3.1/qwen2.5/gemma3 — tool-calling is gated by each Ollama template; the one that tool-calls, `llama3.1:8b`, is too weak and its `utility`/`security` metrics actively mislead). Use Ollama for *plumbing* on `develop`; for trustworthy numbers, port the **`--hosted-model`** path from `master` (points an `OpenAILLM` at GitHub Models / Groq / OpenAI via `.env` `AEGIS_LLM_*`). Never commit a real key — `.env` is gitignored.
 
 ## How Aegis integrates with AgentDojo
 
@@ -112,36 +106,19 @@ python run_aegis.py -s workspace -ut user_task_0 --config combined
 # Full ablation under attack: baseline, moderator, sandbox, combined
 python run_aegis.py -s workspace --attack important_instructions --config all -f
 
-# Offline logic tests (no model/server needed)
+# Offline foundation tests (no model/server needed)
 $env:PYTHONPATH="."; python tests/test_aegis.py
 ```
 
-The four `--config` presets in `aegis/pipeline.py` (`PRESETS`) are the ablation matrix: `baseline` (undefended), `moderator` (detection stack, no sandbox), `sandbox` (isolation only), `combined`. `ESCALATE` collapses to BLOCK by default (no human in the benchmark loop); `--escalate allow` simulates approval.
+The four `--config` presets in `aegis/pipeline.py` (`PRESETS`) are the ablation matrix: `baseline` (undefended), `moderator` (detection stack, no sandbox), `sandbox` (isolation only), `combined`. `ESCALATE` collapses to BLOCK by default (no human in the benchmark loop); `--escalate allow` simulates approval. (On `develop` the layers are stubs, so all configs currently behave like the baseline until implemented.)
 
-## Demo UI / dashboard (planned design)
-
-A lightweight web UI (Prashanna's deliverable; Week 3–4) with two modes:
-
-- **Live tester / demo** — pick suite / user task / attack / ablation config, run it, and watch the conversation timeline with each tool call annotated by all four layers (taint badge, moderator risk + verdict, gate verdict, enforcement: executed / blocked). Includes a trust-map panel.
-- **Analytics dashboard** — ASR, benign utility, false-positive/over-block rate, and latency **across the four ablation configs** (the success-criteria table, rendered as charts).
-- **Killer demo view** — baseline-vs-combined side-by-side on the same task+attack: the attack succeeds undefended on the left and is blocked by Aegis on the right.
-
-**Architecture principle:** the UI is a **thin presentation layer over the headless CLI and logs**, never a replacement. `run_aegis.py` + `runs/*.json` (per-task utility/security/messages) + `runs/aegis/decisions.jsonl` (decision trail) remain the source of truth for reproducible numbers; the UI reads those and may trigger runs in-process. Headline numbers must still come from headless runs.
-
-**Stack (decided): FastAPI + React.** A FastAPI backend exposes a thin API over the headless runner — trigger a run (wraps `run_aegis` logic), read aggregated results from `runs/*.json`, and stream `runs/aegis/decisions.jsonl`; a React frontend renders the two modes and the side-by-side view. More polished than a Streamlit app, at the cost of a separate frontend — so it is **sequenced after** the core layers and a first real evaluation run are complete. Keep the backend a thin wrapper: the headless CLI + logs remain the source of truth for reproducible numbers.
+> The metrics aggregator (`aegis/metrics.py`) and the FastAPI + React dashboard (Prashanna's Week-4 deliverable — live tester, analytics, baseline-vs-Aegis side-by-side) are built on the **`master`** prototype. They're a thin presentation layer over the headless CLI + logs (`runs/*.json`, `runs/aegis/decisions.jsonl`), which stay the source of truth for reproducible numbers. Port them to `develop` when evaluation begins.
 
 ## Evaluation is the deliverable
 
 Success is measured, not asserted. Always evaluate against an **undefended baseline** with **ablations** — four configs: baseline, moderator-only, sandbox-only, combined — to isolate each layer's contribution. Metrics: Attack Success Rate, benign task utility, false-positive/over-block rate, latency overhead. A "block everything" defense is a failure because utility collapses; a change only counts if it cuts attacks *and* keeps the agent usable. Log every run to `./runs` so results regenerate.
 
 AgentDojo provides 4 suites — `workspace`, `banking`, `travel`, `slack` — with synthetic tasks and synthetic injection cases. All data is synthetic; this project builds and measures **defenses only** and introduces no new exploits.
-
-`aegis/metrics.py` aggregates the per-task result JSONs under `runs/` into the ablation table (benign utility, utility-under-attack, ASR, latency + overhead, and utility-drop as the over-block proxy), keyed by config. It reads only `runs/*.json` (reproducible) and is the data contract the dashboard consumes:
-
-```powershell
-python -m aegis.metrics --logdir ./runs            # printed table
-python -m aegis.metrics --logdir ./runs --json     # JSON for the UI
-```
 
 ## Module ownership (coordinate before changing shared seams)
 
