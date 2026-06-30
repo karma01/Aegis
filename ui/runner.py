@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -111,7 +112,16 @@ def run_single(
         PRESETS[config],
         escalate_action=Decision.BLOCK if escalate == "block" else Decision.ALLOW,
     )
-    pipeline = build_aegis_pipeline(model, cfg, model_id=model_id, name_suffix=f"aegis_{config}")
+    # Mirror run_aegis.py: a hosted OpenAI-compatible model (AEGIS_LLM_* in .env)
+    # takes precedence over the local ModelsEnum path. Without this the UI falls
+    # back to Ollama, which fails for models whose template lacks tool support.
+    hosted_model = os.getenv("AEGIS_LLM_MODEL")
+    base_url = os.getenv("AEGIS_LLM_BASE_URL")
+    api_key = os.getenv("AEGIS_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    pipeline = build_aegis_pipeline(
+        model, cfg, model_id=model_id, name_suffix=f"aegis_{config}",
+        hosted_model=hosted_model, base_url=base_url, api_key=api_key,
+    )
     suite_obj = get_suite(benchmark_version, suite)
     logdir_p = Path(logdir)
     start = _count_lines(_DECISIONS)
