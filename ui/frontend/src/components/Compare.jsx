@@ -35,8 +35,8 @@ export default function Compare() {
         setTasks(t)
         setForm((f) => ({
           ...f,
-          user_task: t.user_tasks[0] || '',
-          injection_task: t.injection_tasks[0] || '',
+          user_task: t.user_tasks[0]?.id || '',
+          injection_task: t.injection_tasks[0]?.id || '',
         }))
       })
       .catch((e) => setError(String(e)))
@@ -70,7 +70,9 @@ export default function Compare() {
           </label>
           <label>User task
             <select value={form.user_task} onChange={set('user_task')}>
-              {tasks.user_tasks.map((t) => <option key={t}>{t}</option>)}
+              {tasks.user_tasks.map((t) => (
+                <option key={t.id} value={t.id}>{t.id} — {t.prompt}</option>
+              ))}
             </select>
           </label>
           <label>Attack
@@ -80,7 +82,9 @@ export default function Compare() {
           </label>
           <label>Injection task
             <select value={form.injection_task} onChange={set('injection_task')}>
-              {tasks.injection_tasks.map((t) => <option key={t}>{t}</option>)}
+              {tasks.injection_tasks.map((t) => (
+                <option key={t.id} value={t.id}>{t.id} — {t.goal}</option>
+              ))}
             </select>
           </label>
           <label>Model
