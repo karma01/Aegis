@@ -25,3 +25,6 @@ export const postCompare = (body) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }).then(asJson)
+
+export const getRuns = () => fetch('/api/runs').then(asJson)
+export const getRunDetail = (id) => fetch(`/api/runs/detail?id=${encodeURIComponent(id)}`).then(asJson)

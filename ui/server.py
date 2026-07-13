@@ -23,9 +23,9 @@ from agentdojo.models import ModelsEnum
 from agentdojo.task_suite.load_suites import get_suite
 
 from aegis.decision_log import DEFAULT_LOG_PATH
-from aegis.metrics import compute, to_dict
+from aegis.metrics import compute, config_label, to_dict
 from aegis.pipeline import PRESETS
-from ui.runner import run_single
+from ui.runner import _clean_messages, run_single
 
 SUITES = ["workspace", "banking", "travel", "slack"]
 BENCHMARK_VERSION = "v1.2.2"
@@ -169,3 +169,70 @@ def compare(req: CompareRequest) -> dict:
         }
     except Exception as exc:
         raise HTTPException(500, f"{type(exc).__name__}: {exc}") from exc
+
+
+def _iter_results(logdir: str):
+    """Yield (path, data) for every AgentDojo result JSON under logdir."""
+    root = Path(logdir)
+    for p in root.rglob("*.json"):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if isinstance(data, dict) and "utility" in data and "suite_name" in data:
+            yield p, data
+
+
+def _is_blocked(msg: dict) -> bool:
+    err = msg.get("error")
+    return isinstance(err, str) and (err.startswith("AEGIS_") or err.startswith("SANDBOX_"))
+
+
+@app.get("/api/runs")
+def runs_list(logdir: str = "runs") -> dict:
+    """Every past run as a report row, newest first — for the report browser."""
+    root = Path(logdir)
+    rows = []
+    for path, d in _iter_results(logdir):
+        rows.append({
+            "id": str(path.relative_to(root)).replace("\\", "/"),
+            "timestamp": d.get("evaluation_timestamp"),
+            "suite": d.get("suite_name"),
+            "config": config_label(d.get("pipeline_name", "?")),
+            "user_task": d.get("user_task_id"),
+            "injection_task": d.get("injection_task_id"),
+            "attack": d.get("attack_type"),
+            "utility": d.get("utility"),
+            "security": d.get("security"),  # True => attack succeeded
+            "duration": d.get("duration"),
+        })
+    rows.sort(key=lambda r: (r["timestamp"] or ""), reverse=True)
+    return {"runs": rows, "total": len(rows)}
+
+
+@app.get("/api/runs/detail")
+def run_detail(id: str, logdir: str = "runs") -> dict:
+    """Full report for one run: metadata, the conversation timeline, and the
+    tool calls Aegis blocked (derived from the saved messages)."""
+    root = Path(logdir).resolve()
+    target = (root / id).resolve()
+    if not str(target).startswith(str(root)) or not target.exists():
+        raise HTTPException(404, f"run '{id}' not found")
+    d = json.loads(target.read_text(encoding="utf-8"))
+    messages = _clean_messages(d)
+    return {
+        "meta": {
+            "suite": d.get("suite_name"),
+            "config": config_label(d.get("pipeline_name", "?")),
+            "user_task": d.get("user_task_id"),
+            "injection_task": d.get("injection_task_id"),
+            "attack": d.get("attack_type"),
+            "utility": d.get("utility"),
+            "security": d.get("security"),
+            "duration": d.get("duration"),
+            "timestamp": d.get("evaluation_timestamp"),
+            "model": d.get("pipeline_name"),
+        },
+        "messages": messages,
+        "blocked_count": sum(1 for m in messages if _is_blocked(m)),
+    }
