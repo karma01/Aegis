@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -171,6 +172,26 @@ def compare(req: CompareRequest) -> dict:
         raise HTTPException(500, f"{type(exc).__name__}: {exc}") from exc
 
 
+@lru_cache(maxsize=8)
+def _suite_texts(suite: str) -> tuple[dict, dict]:
+    """Cached {task_id: text} maps for a suite: user PROMPTs and injection GOALs."""
+    s = get_suite(BENCHMARK_VERSION, suite)
+    users = {tid: getattr(t, "PROMPT", "") for tid, t in s.user_tasks.items()}
+    injs = {tid: getattr(t, "GOAL", "") for tid, t in s.injection_tasks.items()}
+    return users, injs
+
+
+def _task_text(suite: str, user_task_id: str, injection_task_id: str | None) -> tuple[str, str]:
+    """Resolve a run's user-task prompt and injection goal to human-readable text."""
+    if suite not in SUITES:
+        return "", ""
+    utexts, itexts = _suite_texts(suite)
+    # user_task_id may be an injection task run as a user task -> fall back to itexts.
+    prompt = utexts.get(user_task_id) or itexts.get(user_task_id) or ""
+    goal = itexts.get(injection_task_id, "") if injection_task_id else ""
+    return prompt, goal
+
+
 def _iter_results(logdir: str):
     """Yield (path, data) for every AgentDojo result JSON under logdir."""
     root = Path(logdir)
@@ -194,13 +215,16 @@ def runs_list(logdir: str = "runs") -> dict:
     root = Path(logdir)
     rows = []
     for path, d in _iter_results(logdir):
+        prompt, goal = _task_text(d.get("suite_name"), d.get("user_task_id"), d.get("injection_task_id"))
         rows.append({
             "id": str(path.relative_to(root)).replace("\\", "/"),
             "timestamp": d.get("evaluation_timestamp"),
             "suite": d.get("suite_name"),
             "config": config_label(d.get("pipeline_name", "?")),
             "user_task": d.get("user_task_id"),
+            "user_task_prompt": prompt,
             "injection_task": d.get("injection_task_id"),
+            "injection_task_goal": goal,
             "attack": d.get("attack_type"),
             "utility": d.get("utility"),
             "security": d.get("security"),  # True => attack succeeded
@@ -220,12 +244,15 @@ def run_detail(id: str, logdir: str = "runs") -> dict:
         raise HTTPException(404, f"run '{id}' not found")
     d = json.loads(target.read_text(encoding="utf-8"))
     messages = _clean_messages(d)
+    prompt, goal = _task_text(d.get("suite_name"), d.get("user_task_id"), d.get("injection_task_id"))
     return {
         "meta": {
             "suite": d.get("suite_name"),
             "config": config_label(d.get("pipeline_name", "?")),
             "user_task": d.get("user_task_id"),
+            "user_task_prompt": prompt,
             "injection_task": d.get("injection_task_id"),
+            "injection_task_goal": goal,
             "attack": d.get("attack_type"),
             "utility": d.get("utility"),
             "security": d.get("security"),

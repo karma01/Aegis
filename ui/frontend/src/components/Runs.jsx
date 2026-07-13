@@ -7,6 +7,11 @@ function fmtDate(ts) {
   return ts.replace('T', ' ').slice(0, 19)
 }
 
+function trunc(s, n = 48) {
+  if (!s) return ''
+  return s.length > n ? s.slice(0, n) + '…' : s
+}
+
 function AttackCell({ run }) {
   if (!run.attack) return <span className="muted small">benign</span>
   // security === true => attack succeeded
@@ -90,8 +95,12 @@ export default function Runs() {
                   <td className="small">{fmtDate(r.timestamp)}</td>
                   <td>{r.suite}</td>
                   <td className="mono">{r.config}</td>
-                  <td className="mono small">{r.user_task}</td>
-                  <td className="mono small">{r.attack ? r.injection_task : '—'}</td>
+                  <td className="small" title={`${r.user_task}: ${r.user_task_prompt || ''}`}>
+                    {trunc(r.user_task_prompt) || <span className="mono">{r.user_task}</span>}
+                  </td>
+                  <td className="small" title={r.attack ? `${r.injection_task}: ${r.injection_task_goal || ''}` : ''}>
+                    {r.attack ? (trunc(r.injection_task_goal, 40) || <span className="mono">{r.injection_task}</span>) : '—'}
+                  </td>
                   <td>{r.utility ? <span className="verdict v-allow">✓</span> : <span className="verdict v-block">✗</span>}</td>
                   <td><AttackCell run={r} /></td>
                   <td className="small muted">{r.duration ? `${r.duration.toFixed(1)}s` : '—'}</td>
@@ -120,8 +129,9 @@ export default function Runs() {
                   <span className="chip">{fmtDate(detail.meta.timestamp)}</span>
                 </div>
               </div>
+              <p className="small"><b>User task</b> <span className="mono muted">{detail.meta.user_task}</span> — {detail.meta.user_task_prompt}</p>
               {detail.meta.attack && (
-                <p className="muted small">Attack: <b>{detail.meta.attack}</b> · injection: <span className="mono">{detail.meta.injection_task}</span></p>
+                <p className="small"><b>Injection</b> <span className="mono muted">{detail.meta.injection_task}</span> — {detail.meta.injection_task_goal} <span className="muted">(attack: {detail.meta.attack})</span></p>
               )}
               <h3>Conversation</h3>
               <Timeline messages={detail.messages} />
