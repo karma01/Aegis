@@ -12,12 +12,30 @@ function trunc(s, n = 48) {
   return s.length > n ? s.slice(0, n) + '…' : s
 }
 
+function isProbe(run) {
+  // An injection task run as a standalone task (AgentDojo accomplishability
+  // check) — not a genuine user request; its goal is itself an egress action.
+  return !run.attack && String(run.user_task).startsWith('injection_task')
+}
+
 function AttackCell({ run }) {
-  if (!run.attack) return <span className="muted small">benign</span>
-  // security === true => attack succeeded
-  return run.security
-    ? <span className="verdict v-block">succeeded</span>
-    : <span className="verdict v-allow">blocked</span>
+  if (run.attack) {
+    // security === true => attack succeeded
+    return run.security
+      ? <span className="verdict v-block">succeeded</span>
+      : <span className="verdict v-allow">blocked</span>
+  }
+  if (isProbe(run)) {
+    return (
+      <span
+        className="badge badge-grey"
+        title="Injection task run as a standalone task (accomplishability probe). Under a defended config Aegis blocks its egress action, so utility shows ✗ — expected, and excluded from the benign-utility metric."
+      >
+        probe
+      </span>
+    )
+  }
+  return <span className="muted small">benign</span>
 }
 
 export default function Runs() {
@@ -81,6 +99,10 @@ export default function Runs() {
             </select>
           </div>
         </div>
+        <p className="muted small" style={{ margin: '0 0 10px' }}>
+          Rows tagged <span className="badge badge-grey">probe</span> are injection tasks run as standalone
+          tasks — a ✗ there means Aegis blocked their egress (expected; excluded from benign utility).
+        </p>
         <div className="runs-table-wrap">
           <table className="decisions runs-table">
             <thead>
