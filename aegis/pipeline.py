@@ -75,7 +75,10 @@ def _pipeline_name_for(model: str) -> str:
     for token, canonical in _ATTACK_NAME_HINTS.items():
         if token in low:
             return canonical
-    return "hosted_" + model.replace("/", "_").replace(":", "_")
+    # Unknown family (e.g. glm, qwen, deepseek): fall back to a name containing the
+    # recognised token "local" so name-addressing attacks (important_instructions)
+    # still resolve to the generic "Local model" label instead of crashing.
+    return "local-" + model.replace("/", "_").replace(":", "_")
 
 
 def _make_hosted_llm(model: str, base_url: str | None, api_key: str | None) -> OpenAILLM:

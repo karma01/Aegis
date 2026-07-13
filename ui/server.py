@@ -11,6 +11,7 @@ Run from the repo root:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -78,15 +79,24 @@ def options() -> dict:
     }
 
 
+def _task_num(task_id: str) -> int:
+    """Trailing integer of an id like 'user_task_12' -> 12 (for natural sort)."""
+    m = re.search(r"(\d+)$", task_id)
+    return int(m.group(1)) if m else 0
+
+
 @app.get("/api/suite/{suite}")
 def suite_tasks(suite: str) -> dict:
     if suite not in SUITES:
         raise HTTPException(404, f"unknown suite '{suite}'")
     s = get_suite(BENCHMARK_VERSION, suite)
+    users = sorted(s.user_tasks.items(), key=lambda kv: _task_num(kv[0]))
+    injs = sorted(s.injection_tasks.items(), key=lambda kv: _task_num(kv[0]))
     return {
         "suite": suite,
-        "user_tasks": sorted(s.user_tasks.keys()),
-        "injection_tasks": sorted(s.injection_tasks.keys()),
+        # id + the actual task text, so the UI dropdowns are meaningful (not just ids).
+        "user_tasks": [{"id": tid, "prompt": getattr(t, "PROMPT", "")} for tid, t in users],
+        "injection_tasks": [{"id": tid, "goal": getattr(t, "GOAL", "")} for tid, t in injs],
     }
 
 
