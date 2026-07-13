@@ -54,10 +54,9 @@ def _retry(label: str, fn, max_retries: int, base_sleep: int):
     return None
 
 
-def _cap(items: list[str], limit: int) -> list[str] | None:
-    if limit and limit > 0:
-        return sorted(items)[:limit]
-    return None  # None => all
+def _cap(items: list[str], limit: int) -> list[str]:
+    items = sorted(items)
+    return items[:limit] if (limit and limit > 0) else items
 
 
 def main_impl(suites, configs, attack, model, model_id, limit_user, limit_injection,
