@@ -12,7 +12,6 @@ import dataclasses
 import json
 import os
 from pathlib import Path
-
 from dotenv import load_dotenv
 
 from agentdojo.attacks.attack_registry import load_attack
@@ -62,7 +61,6 @@ def _text_of(content) -> str:
         return "\n".join(p for p in parts if p)
     return "" if content is None else str(content)
 
-
 def _clean_messages(result: dict) -> list[dict]:
     """Normalise the saved conversation into a UI-friendly timeline."""
     timeline = []
@@ -83,7 +81,6 @@ def _clean_messages(result: dict) -> list[dict]:
             }
         )
     return timeline
-
 
 def _load_result(logdir: Path, pipeline_name: str, suite: str, user_task: str, attack: str, injection: str) -> dict:
     path = logdir / pipeline_name / suite / user_task / attack / f"{injection}.json"
