@@ -144,7 +144,6 @@ python -m aegis.metrics --logdir ./runs --json     # JSON for the UI
 ```
 
 ## Module ownership (coordinate before changing shared seams)
-
 - **Pawan** — Detection: moderator, coarse taint tracking, trust-label model.
 - **Asmita** — Containment: sandbox integration, lethal-trifecta policy gate, human-escalation path.
 - **Prashanna** — Evaluation: AgentDojo harness wiring, metrics & logging, ablations, dashboard.
