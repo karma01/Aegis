@@ -7,25 +7,20 @@ decision log. Requires the model server (Ollama / API) to be reachable.
 """
 
 from __future__ import annotations
-
 import dataclasses
 import json
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-
 from agentdojo.attacks.attack_registry import load_attack
 from agentdojo.benchmark import benchmark_suite_with_injections, benchmark_suite_without_injections
 from agentdojo.logging import OutputLogger
 from agentdojo.task_suite.load_suites import get_suite
-
 from aegis.contracts import Decision
 from aegis.decision_log import DEFAULT_LOG_PATH
 from aegis.pipeline import PRESETS, build_aegis_pipeline
 
 _DECISIONS = Path(DEFAULT_LOG_PATH)
-
-
 def _count_lines(path: Path) -> int:
     if not path.exists():
         return 0
